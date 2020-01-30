@@ -7,4 +7,8 @@ You just need a structured text and with one click your graphical WBS is been cr
 If you want read more, have a look at my webpages:
 
 https://techpluscode.de/projekt-struktur-plan-psp-in-3-minuten/
+
+
 https://techpluscode.de/work-breakdown-structure-wbs-in-3-minutes/
+
+
