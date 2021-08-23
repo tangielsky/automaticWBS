@@ -1,10 +1,17 @@
-Attribute VB_Name = "AutomaticWBS"
 'Macro:  Automatic work-breakdown structure WBS / Projektstrukturplan PSP
 'Author: Thomas Angielsky
+
+'https://techpluscode.de/tag/PSP/
+'https://techpluscode.de/tag/WBS/
 
 'https://techpluscode.de/projekt-struktur-plan-psp-in-3-minuten/
 'https://techpluscode.de/work-breakdown-structure-wbs-in-3-minutes/
 
+'Version 06: 22.08.2021
+'            - Ribbon Button to insert WBS on any sheet
+'            - functions to group and ungroup full WBS
+'            - bug solved: distance of items at level 2 was not correct, if no children
+'
 'Version 05: 08.07.2020
 '            reduced links only to:
 '            - Visual Basic for Applications
@@ -17,7 +24,7 @@ Attribute VB_Name = "AutomaticWBS"
 '            corrections:
 '            - clear x,y area before routine starts
 '
-
+'
 'Version 03: 02.02.2020
 '            - functions for progress visualization
 '            - expanded to 10 user fields
@@ -27,10 +34,7 @@ Attribute VB_Name = "AutomaticWBS"
 '            - some corrections
 
 
-
 Option Explicit
-
-
 
 'Datentyp für Koordinaten und Anzahl Kindelemente
 'Datatype for coordinates and number of children items
@@ -39,7 +43,6 @@ Type Position
   y As Double
   count As Integer
 End Type
-
 
 
 'Positionen in der Tabelle "Start"
@@ -54,6 +57,23 @@ Const COL_COUNT = 17
 Const ROW_START = 5
 
 
+'Callback für die Ribbon-Buttons
+'Callback for Ribbon buttons
+Sub onRibbonInsertWBS(control As IRibbonControl)
+  Call CreateWorkBreakdownStructure
+End Sub
+
+Sub onRibbonRemoveWBS(control As IRibbonControl)
+  Call DeleteWorkBreakdownStructure
+End Sub
+
+Sub onRibbonGroupWBS(control As IRibbonControl)
+  Call GroupWorkBreakdownStructure
+End Sub
+
+Sub onRibbonUngroupWBS(control As IRibbonControl)
+  Call UngroupWorkBreakdownStructure
+End Sub
 
 
 'Löscht die PSP-Struktur im aktuellen Tabellenblatt
@@ -62,13 +82,16 @@ Sub DeleteWorkBreakdownStructure()
 Dim i As Integer
 Dim shape1
   
+  If ExistsObjectName("WBS_Group") = True Then
+    ActiveSheet.Shapes("WBS_Group").Delete
+  End If
+  
   For Each shape1 In ActiveSheet.Shapes
     If Left$(shape1.name, 2) = "N_" Then
       shape1.Delete
     End If
   Next
 End Sub
-
 
 
 'Hauptfunktion zum Erzeugen der PSP-Struktur im aktuellen Tabellenblatt
@@ -83,6 +106,7 @@ Dim level As Integer
 Dim levelOld As Integer
 Dim p As Position
 Dim pParent As Position
+Dim pLevel1Old As Position
 Dim caption As String
 Dim w As Double
 Dim h As Double
@@ -95,11 +119,11 @@ Dim i As Integer
 Dim progress As Double
 Dim firstshape As String
 
+On Error Resume Next
 
   Call DeleteWorkBreakdownStructure
   Call DeleteInternalValues
   
-
   'Einstellungen einlesen
   'Get setup values
   spaceYLevel0 = Sheets("Setup").Range("LEVEL0_SPACE_Y")
@@ -132,7 +156,7 @@ Dim firstshape As String
     End If
     
     level = CountPoints(wbsCode)
-    If level = 0 Then 'usualy projectname
+    If level = 0 Then 'usually projectname
       caption = Sheets("setup").Shapes("LEVEL_1").TextFrame.Characters.Text
       w = Sheets("Setup").Shapes("LEVEL_1").Width
       h = Sheets("Setup").Shapes("LEVEL_1").Height
@@ -141,12 +165,16 @@ Dim firstshape As String
       caption = Sheets("setup").Shapes("LEVEL_2").TextFrame.Characters.Text
       w = Sheets("Setup").Shapes("LEVEL_2").Width
       h = Sheets("Setup").Shapes("LEVEL_2").Height
+       
       If pParent.count = 0 Then
         p.x = 0
         p.y = p.y + h * spaceYLevel0
       Else
         d = GetLastMaxPosition(wbsLevel1Old)
+        pLevel1Old = GetLastPosition(wbsLevel1Old)
+        
         If d <> 0 Then
+          If pLevel1Old.count = 0 Then d = d + Sheets("Setup").Shapes("LEVEL_3").Width * spaceXLevel3
           p.x = d + spaceXLevel1 * w
         Else
           p.x = pParent.x + spaceXLevel1 * w
@@ -206,8 +234,7 @@ Dim firstshape As String
     For i = 10 To 1 Step -1
       caption = Replace(caption, "$F" & CStr(i), Sheets("Start").Cells(row, COL_FIELDS + i - 1))
     Next
-    
-    
+       
     'Rechteck-Shape und Verbindungslinie einfügen
     'Insert rectangle shape and connector
     Call InsertRectangle(wbsCode, caption, p.x, p.y, w, h, level, progress)
@@ -216,7 +243,6 @@ Dim firstshape As String
     'Nächste Zeile vorbereiten
     'Prepare next line
     If row = ROW_START Then firstshape = "N_" & wbsCode
-    
     row = row + 1
     levelOld = level
     wbsOld = wbsCode
@@ -235,26 +261,20 @@ Dim firstshape As String
   ActiveSheet.Cells(1, 1).Select
 End Sub
 
+
 'Löscht die internen Werte für X, Y, Count vor der Neuberechnung des PSP
 'Deletes the internal values of X, Y, Count before a recalculation of WBS
 Sub DeleteInternalValues()
-Dim row As Integer
-Dim result As Double
-Dim w As String
+  Sheets("Start").Columns(COL_X).ClearContents
+  Sheets("Start").Cells(4, COL_X) = "X"
 
-  row = ROW_START
-  Do
-    w = Sheets("Start").Cells(row, COL_CODE)
-    If w <> "" Then
-      Sheets("Start").Cells(row, COL_X) = ""
-      Sheets("Start").Cells(row, COL_Y) = ""
-      Sheets("Start").Cells(row, COL_COUNT) = ""
-    End If
+  Sheets("Start").Columns(COL_Y).ClearContents
+  Sheets("Start").Cells(4, COL_Y) = "Y"
 
-    row = row + 1
-  Loop Until w = ""
-
+  Sheets("Start").Columns(COL_COUNT).ClearContents
+  Sheets("Start").Cells(4, COL_COUNT) = "Count"
 End Sub
+
 
 'Zählt die Anzahl der Punkte im String => Strukturebene
 'Counts the amount of points in the string => structure level
@@ -268,7 +288,6 @@ Dim i As Integer
   Next
   CountPoints = result
 End Function
-
 
 
 'Findet den maximalen X Wert
@@ -294,7 +313,6 @@ Dim w As String
 End Function
 
 
-
 'Findet then übergeordneten PSP-Code
 'Gets the parent WBS code
 Function GetParentWBS(wbsCode As String) As String
@@ -311,7 +329,6 @@ Dim result As String
   
   GetParentWBS = result
 End Function
-
 
 
 'Findet den PSP-Code der 2. Ebene
@@ -335,7 +352,6 @@ Dim result As String
   
   GetLevel2WBS = result
 End Function
-
 
 
 'Erzeugt ein Rechteckshape
@@ -375,7 +391,6 @@ Dim id As String
 End Sub
 
 
-
 'Fügt eine Verbindungslinie zwischen 2 PSP-Elementen ein
 'Adds a connrector between to rectangle shapes
 Sub InsertConnector(wbsCodeFrom As String, wbsCodeTo As String, level As Integer)
@@ -409,8 +424,7 @@ Dim pTo As Integer
   Sheets("Setup").Shapes("CONNECTOR").PickUp
   ActiveSheet.Shapes("N_" & wbsCodeFrom & "_" & wbsCodeTo).Apply
 End Sub
-      
-      
+           
       
 'Findet die Koordinaten der letzten Position
 'Gets the coordinates of the last position
@@ -439,7 +453,6 @@ Dim w As String
 End Function
 
 
-
 'Findet die Koordinaten der letzten max. Position
 'Gets the coordinates of the last max. position
 Function GetLastMaxPosition(wbsCode As String) As Double
@@ -460,7 +473,6 @@ Dim wbsLevel2 As String
   
   GetLastMaxPosition = result
 End Function
-
 
 
 'Setzt die Koordinaten eines PSP-Elements
@@ -487,7 +499,6 @@ Dim w As String
 End Sub
 
 
-
 'Setzt alle übergeordneten Koordinaten eines PSP-Elements
 'Saves the parent coordinates of a WBS item
 Sub SetPositions(wbsCode As String, p As Position)
@@ -512,4 +523,48 @@ Dim wbsLevel2 As String
 End Sub
 
 
+'Prüft, ob ein Shape existiert
+'Checks, if shape exists
+Function ExistsObjectName(shapename As String) As Boolean
+Dim i As Integer
+Dim shp As Shape
+  
+  ExistsObjectName = False
+  For Each shp In ActiveSheet.Shapes
+    If shp.name = shapename Then
+      ExistsObjectName = True
+      Exit For
+    End If
+  Next
+End Function
 
+
+'Gruppiert alle PSP Elemente zu einer Gruppe
+'Groups all WBS items to one group
+Sub GroupWorkBreakdownStructure()
+Dim i As Integer
+Dim shape1
+Dim first As Boolean
+
+On Error Resume Next
+
+  Call UngroupWorkBreakdownStructure
+  
+  first = True
+  For Each shape1 In ActiveSheet.Shapes
+    If Left$(shape1.name, 2) = "N_" Then
+      If first = True Then first = False
+      shape1.Select first
+    End If
+  Next
+  Selection.ShapeRange.Group.Select
+  Selection.name = "WBS_Group"
+End Sub
+
+'Löst eine gruppierte PSP Struktur auf
+'Ungroups a WBS structure
+Sub UngroupWorkBreakdownStructure()
+  If ExistsObjectName("WBS_Group") = True Then
+    ActiveSheet.Shapes("WBS_Group").Ungroup
+  End If
+End Sub
