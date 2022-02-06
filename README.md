@@ -38,3 +38,6 @@ https://techpluscode.de/projektstrukturplan-mit-automatischer-fortschrittsanzeig
 
 Funktionsweise des Makros:
 https://techpluscode.de/makro-automatischer-projektstrukturplan-mit-excel/
+
+Weiterentwicklung als Jump Page für Projektteams:
+https://techpluscode.de/projektstrukturplan-als-jump-page-fur-projekte/
